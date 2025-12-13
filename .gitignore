@@ -1,0 +1,5 @@
+*.class
+*.bak
+bin/
+out/
+target/

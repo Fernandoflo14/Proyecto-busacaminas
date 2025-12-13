@@ -1,95 +1,192 @@
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.util.Random;
 
 public class BuscaminasGUI extends JFrame {
-    /*
-     * CONFIGURACIÓN / Puntos fácilmente personalizables
-     * El equipo puede cambiar estas constantes para adaptar el aspecto
-     * o el comportamiento del tablero sin tocar la lógica interna.
-     */
-    private final int SIZE = 8; // Tamaño del tablero (8x8)
-    private final int NUM_MINAS = 10;
 
-    // Temas y estilos: cambiar aquí para personalizar colores, fuentes, iconos
-    private static final Color BOARD_BG = new Color(60, 63, 65);
-    private static final Color CELL_BG = new Color(220, 220, 220);
-    private static final Color OPEN_CELL_BG = new Color(245, 245, 245);
-    private static final Color MINE_BG = new Color(255, 180, 180);
+    // ===== NIVELES (más estilo Google: más minas) =====
+    private enum Nivel {
+        FACIL("Fácil", 8, 10),
+        INTERMEDIO("Intermedio", 10, 18),
+        DIFICIL("Difícil", 12, 28);
+
+        final String nombre;
+        final int size;
+        final int minas;
+        Nivel(String n, int s, int m) { nombre = n; size = s; minas = m; }
+        @Override public String toString() { return nombre; }
+    }
+
+    private int SIZE = 8;
+    private int NUM_MINAS = 10;
+    private Nivel nivelActual = Nivel.FACIL;
+
+    // ===== TEMA CELESTE (estético) =====
+    private static final Color APP_BG = new Color(233, 245, 255);        // fondo general
+    private static final Color TOP_BG = new Color(210, 236, 255);        // barra superior
+    private static final Color BOARD_BG = new Color(200, 225, 245);      // fondo tablero
+
+    private static final Color CELL_CLOSED_BG = new Color(245, 250, 255); // celda tapada
+    private static final Color CELL_HOVER_BG  = new Color(230, 244, 255); // hover
+    private static final Color CELL_OPEN_BG   = new Color(214, 232, 245); // celda abierta
+
+    private static final Color CELL_BORDER    = new Color(170, 200, 220); // borde suave
+    private static final Color FLAG_COLOR     = new Color(200, 60, 60);
+    private static final Color TEXT_SOFT      = new Color(70, 80, 90);
+
+    private static final Color MINE_BG = new Color(255, 190, 190);
+
     private static final Font TITLE_FONT = new Font("SansSerif", Font.BOLD, 24);
-    private static final Font CELL_FONT = new Font("SansSerif", Font.BOLD, 18);
+    private static final Font CELL_FONT  = new Font("SansSerif", Font.BOLD, 18);
 
-    // Iconos/literales para bandera y mina — el equipo puede reemplazarlos por imágenes
-    // Si usan imágenes, reemplacen estas cadenas por `new ImageIcon("path")` en los puntos indicados.
     private static final String FLAG_TEXT = "⚑";
     private static final String MINE_TEXT = "💣";
 
     private JButton[][] botones;
     private boolean[][] minas;
-    // Contador de celdas abiertas (para calcular puntaje)
-    private int openedCells = 0;
-    private Ranking rankingPanel; // panel lateral de ranking
 
-    // Constructor
+    private int openedCells = 0;
+    private Ranking rankingPanel;
+    private boolean gameOver = false;
+
+    private JPanel tablero;
+    private JComboBox<Nivel> comboNivel;
+
+    private final Random rnd = new Random();
+
     public BuscaminasGUI() {
-        try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (Exception ignored) {}
+        try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
+        catch (Exception ignored) {}
 
         setTitle("Buscaminas");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout(8, 8));
 
-        botones = new JButton[SIZE][SIZE];
-        minas = new boolean[SIZE][SIZE];
+        // Fondo general
+        getContentPane().setBackground(APP_BG);
 
-        // Panel superior con título y reinicio
+        // ===== TOP BAR =====
         JPanel top = new JPanel(new BorderLayout());
-        top.setBorder(BorderFactory.createEmptyBorder(8, 8, 0, 8));
+        top.setBorder(BorderFactory.createEmptyBorder(10, 12, 8, 12));
+        top.setBackground(TOP_BG);
+
         JLabel titulo = new JLabel("Buscaminas");
-        // Equipo: pueden cambiar `TITLE_FONT` para ajustar la tipografía global
         titulo.setFont(TITLE_FONT);
+        titulo.setForeground(TEXT_SOFT);
         titulo.setHorizontalAlignment(SwingConstants.CENTER);
-        JButton reiniciar = new JButton("Reiniciar");
-        reiniciar.addActionListener(e -> resetGame());
         top.add(titulo, BorderLayout.CENTER);
-        top.add(reiniciar, BorderLayout.EAST);
+
+        JPanel rightTop = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        rightTop.setBackground(TOP_BG);
+
+        comboNivel = new JComboBox<>(Nivel.values());
+        comboNivel.setSelectedItem(nivelActual);
+        comboNivel.setFocusable(false);
+
+        comboNivel.addActionListener(e -> {
+            Nivel seleccionado = (Nivel) comboNivel.getSelectedItem();
+            if (seleccionado != null) cambiarNivel(seleccionado);
+        });
+
+        JButton reiniciar = new JButton("Reiniciar");
+        reiniciar.setFocusable(false);
+        reiniciar.addActionListener(e -> resetGame());
+
+        JLabel modoLbl = new JLabel("Modo:");
+        modoLbl.setForeground(TEXT_SOFT);
+
+        rightTop.add(modoLbl);
+        rightTop.add(comboNivel);
+        rightTop.add(reiniciar);
+
+        top.add(rightTop, BorderLayout.EAST);
         add(top, BorderLayout.NORTH);
 
-        // Panel del tablero
-        // Panel del tablero: modificar `BOARD_BG` para tema del tablero
-        JPanel tablero = new JPanel(new GridLayout(SIZE, SIZE, 4, 4));
-        tablero.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
-        tablero.setBackground(BOARD_BG);
-
-        // Colocar las minas aleatoriamente
-        colocarMinas();
-
-        // Panel de ranking a la derecha
         rankingPanel = new Ranking();
         add(rankingPanel.getPanel(), BorderLayout.EAST);
 
-        // Crear los botones
+        cambiarNivel(nivelActual);
+
+        pack();
+        setLocationRelativeTo(null);
+        setVisible(true);
+    }
+
+    // ===== ESTILOS DE CELDA =====
+    private void styleCellClosed(JButton b) {
+        b.setBackground(CELL_CLOSED_BG);
+        b.setForeground(TEXT_SOFT);
+        b.setFocusPainted(false);
+        b.setOpaque(true);
+        b.setContentAreaFilled(true);
+        b.setBorder(BorderFactory.createLineBorder(CELL_BORDER, 2, true)); // redondeado
+        b.setMargin(new Insets(0, 0, 0, 0));
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+    }
+
+    private void styleCellOpen(JButton b) {
+        b.setBackground(CELL_OPEN_BG);
+        b.setBorder(BorderFactory.createLineBorder(CELL_BORDER, 2, true));
+        b.setCursor(Cursor.getDefaultCursor());
+    }
+
+    private void styleCellMine(JButton b) {
+        b.setBackground(MINE_BG);
+        b.setBorder(BorderFactory.createLineBorder(CELL_BORDER, 2, true));
+    }
+
+    private void cambiarNivel(Nivel nivel) {
+        this.nivelActual = nivel;
+        this.SIZE = nivel.size;
+        this.NUM_MINAS = nivel.minas;
+
+        openedCells = 0;
+        gameOver = false;
+
+        if (tablero != null) remove(tablero);
+
+        botones = new JButton[SIZE][SIZE];
+        minas = new boolean[SIZE][SIZE];
+
+        tablero = new JPanel(new GridLayout(SIZE, SIZE, 6, 6)); // más aire entre casillas
+        tablero.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+        tablero.setBackground(BOARD_BG);
+
+        colocarMinas();
+
         for (int i = 0; i < SIZE; i++) {
             for (int j = 0; j < SIZE; j++) {
                 final int fi = i, fj = j;
+
                 JButton btn = new JButton();
                 btn.setPreferredSize(new Dimension(56, 56));
-                // Fuente y estilo de celda: cambiar `CELL_FONT` para todo el tablero
                 btn.setFont(CELL_FONT);
-                btn.setBackground(CELL_BG);
-                btn.setFocusPainted(false);
-                btn.setOpaque(true);
-                btn.setBorder(BorderFactory.createRaisedBevelBorder());
+                styleCellClosed(btn);
 
                 btn.addMouseListener(new MouseAdapter() {
                     @Override
                     public void mouseClicked(MouseEvent e) {
-                        if (!btn.isEnabled()) return;
+                        if (gameOver || !btn.isEnabled()) return;
+
                         if (SwingUtilities.isRightMouseButton(e)) {
                             toggleFlag(fi, fj);
                         } else if (SwingUtilities.isLeftMouseButton(e)) {
                             handleLeftClick(fi, fj);
+                        }
+                    }
+
+                    @Override
+                    public void mouseEntered(MouseEvent e) {
+                        if (!gameOver && btn.isEnabled() && !FLAG_TEXT.equals(btn.getText())) {
+                            btn.setBackground(CELL_HOVER_BG);
+                        }
+                    }
+
+                    @Override
+                    public void mouseExited(MouseEvent e) {
+                        if (btn.isEnabled() && !FLAG_TEXT.equals(btn.getText())) {
+                            btn.setBackground(CELL_CLOSED_BG);
                         }
                     }
                 });
@@ -100,135 +197,254 @@ public class BuscaminasGUI extends JFrame {
         }
 
         add(tablero, BorderLayout.CENTER);
+        revalidate();
+        repaint();
         pack();
         setLocationRelativeTo(null);
-        setVisible(true);
     }
 
-    // Alternar bandera en clic derecho
     private void toggleFlag(int i, int j) {
         JButton btn = botones[i][j];
         if (!btn.isEnabled()) return;
-        // Hook de personalización: aquí el equipo puede llamar a su controlador
-        // Ejemplo: GameController.onToggleFlag(i, j, btn.getText().equals(FLAG_TEXT));
+
         String txt = btn.getText();
         if (FLAG_TEXT.equals(txt)) {
             btn.setText("");
-            btn.setForeground(Color.BLACK);
+            btn.setForeground(TEXT_SOFT);
+            btn.setBackground(CELL_CLOSED_BG);
         } else {
             btn.setText(FLAG_TEXT);
-            btn.setForeground(new Color(200, 30, 30));
+            btn.setForeground(FLAG_COLOR);
+            btn.setBackground(CELL_CLOSED_BG);
         }
+        checkWin();
     }
 
-    // Manejar clic izquierdo
     private void handleLeftClick(int i, int j) {
         JButton btn = botones[i][j];
+
         if (minas[i][j]) {
-            // Hook: notificar al controlador de evento "mina explotada"
-            // Ejemplo: GameController.onMineTriggered(i, j);
             btn.setText(MINE_TEXT);
-            btn.setBackground(new Color(255, 102, 102));
+            styleCellMine(btn);
             btn.setEnabled(false);
+
             revelarTodasMinas();
-            // Registrar puntaje parcial en ranking
-            String nombre = JOptionPane.showInputDialog(this, "Perdiste. Ingresa tu nombre para el ranking:", "Jugador");
+            gameOver = true;
+
+            String nombre = JOptionPane.showInputDialog(this,
+                    "Perdiste. Ingresa tu nombre para el ranking:", "Jugador");
             if (nombre != null && !nombre.trim().isEmpty()) {
                 rankingPanel.addEntry(nombre.trim(), openedCells);
             }
-            JOptionPane.showMessageDialog(this, "¡Perdiste! Has explotado una mina.", "Juego terminado", JOptionPane.INFORMATION_MESSAGE);
-            // Hook: aquí se podría llamar a GameController.onGameLost();
+
+            JOptionPane.showMessageDialog(this,
+                    "¡Perdiste! Has explotado una mina.", "Juego terminado",
+                    JOptionPane.INFORMATION_MESSAGE);
+
         } else {
             int conteo = contarMinasAdjacentes(i, j);
-            btn.setText(String.valueOf(conteo));
-            btn.setEnabled(false);
-            btn.setBackground(OPEN_CELL_BG);
-            btn.setBorder(BorderFactory.createLoweredBevelBorder());
-            applyNumberColor(btn, conteo);
-            openedCells++;
-            int safeCells = SIZE * SIZE - NUM_MINAS;
-            if (openedCells >= safeCells) {
-                // El jugador ganó
-                String nombre = JOptionPane.showInputDialog(this, "¡Ganaste! Ingresa tu nombre para el ranking:", "Jugador");
-                if (nombre != null && !nombre.trim().isEmpty()) {
-                    rankingPanel.addEntry(nombre.trim(), openedCells);
-                }
-                JOptionPane.showMessageDialog(this, "¡Felicidades! Has ganado.", "Victoria", JOptionPane.INFORMATION_MESSAGE);
-            }
-            // Hook: notificar al controlador que se abrió una celda
-            // Ejemplo: GameController.onCellOpened(i, j, conteo);
+
+            // 0 = BLANCO
             if (conteo == 0) {
-                abrirCeldasVacias(i, j);
+                btn.setText("");
+                btn.setForeground(TEXT_SOFT);
+            } else {
+                btn.setText(String.valueOf(conteo));
+                applyNumberColor(btn, conteo);
             }
+
+            btn.setEnabled(false);
+            styleCellOpen(btn);
+
+            openedCells++;
+            checkWin();
+
+            if (conteo == 0) {
+                int[] presupuesto = { 9 - 1 };
+                abrirCeldasVaciasLimitado(i, j, presupuesto);
+            }
+        }
+    }
+
+    private void checkWin() {
+        int safeCells = SIZE * SIZE - NUM_MINAS;
+        boolean ganoPorAbrir = (openedCells >= safeCells);
+
+        int banderasCorrectas = 0;
+        int banderasIncorrectas = 0;
+
+        for (int i = 0; i < SIZE; i++) {
+            for (int j = 0; j < SIZE; j++) {
+                boolean hayBandera = FLAG_TEXT.equals(botones[i][j].getText());
+                if (hayBandera && minas[i][j]) banderasCorrectas++;
+                if (hayBandera && !minas[i][j]) banderasIncorrectas++;
+            }
+        }
+
+        boolean ganoPorBanderas = (banderasCorrectas == NUM_MINAS) && (banderasIncorrectas == 0);
+
+        if (!gameOver && (ganoPorAbrir || ganoPorBanderas)) {
+            gameOver = true;
+
+            for (int i = 0; i < SIZE; i++) {
+                for (int j = 0; j < SIZE; j++) {
+                    botones[i][j].setEnabled(false);
+                }
+            }
+
+            String nombre = JOptionPane.showInputDialog(this,
+                    "¡Ganaste! Ingresa tu nombre para el ranking:", "Jugador");
+
+            if (nombre != null && !nombre.trim().isEmpty()) {
+                rankingPanel.addEntry(nombre.trim(), openedCells);
+            }
+
+            JOptionPane.showMessageDialog(this,
+                    "¡Felicidades! Has ganado.", "Victoria",
+                    JOptionPane.INFORMATION_MESSAGE);
         }
     }
 
     private void applyNumberColor(JButton btn, int n) {
+        // tonos más suaves (se ven más “clean”)
         switch (n) {
-            case 1: btn.setForeground(new Color(30, 90, 200)); break; // azul
-            case 2: btn.setForeground(new Color(10, 120, 10)); break; // verde
-            case 3: btn.setForeground(new Color(180, 20, 20)); break; // rojo
-            case 4: btn.setForeground(new Color(90, 30, 120)); break; // morado
-            default: btn.setForeground(new Color(80, 80, 80)); break;
+            case 1: btn.setForeground(new Color(30, 120, 200)); break;  // celeste
+            case 2: btn.setForeground(new Color(30, 160, 90)); break;   // verde
+            case 3: btn.setForeground(new Color(220, 120, 40)); break;  // naranja
+            case 4: btn.setForeground(new Color(60, 90, 220)); break;   // azul
+            case 5: btn.setForeground(new Color(160, 70, 200)); break;  // morado
+            default: btn.setForeground(TEXT_SOFT); break;
         }
     }
 
-    // Revelar todas las minas al perder
-    /**
-     * Revela todas las minas en el tablero. Punto de extensión:
-     * - Si el equipo quiere una animación o logging, pueden reemplazar
-     *   el cuerpo o llamar a su controlador desde aquí.
-     */
     private void revelarTodasMinas() {
         for (int i = 0; i < SIZE; i++) {
             for (int j = 0; j < SIZE; j++) {
                 if (minas[i][j]) {
-                    // Reemplazar `MINE_TEXT` por imagen si se desea
                     botones[i][j].setText(MINE_TEXT);
                     botones[i][j].setEnabled(false);
-                    botones[i][j].setBackground(MINE_BG);
+                    styleCellMine(botones[i][j]);
                 }
             }
         }
     }
 
-    // Abrir recursivamente celdas vacías
-    private void abrirCeldasVacias(int i, int j) {
+    private void abrirCeldasVaciasLimitado(int i, int j, int[] presupuesto) {
+        if (presupuesto[0] <= 0) return;
+
         for (int di = -1; di <= 1; di++) {
             for (int dj = -1; dj <= 1; dj++) {
+
+                if (presupuesto[0] <= 0) return;
+
                 int ni = i + di, nj = j + dj;
+
                 if (ni >= 0 && nj >= 0 && ni < SIZE && nj < SIZE) {
+                    if (minas[ni][nj]) continue;
+
                     JButton nb = botones[ni][nj];
+
                     if (nb.isEnabled() && !FLAG_TEXT.equals(nb.getText())) {
+
                         int c = contarMinasAdjacentes(ni, nj);
-                        nb.setText(String.valueOf(c));
+
+                        if (c == 0) {
+                            nb.setText("");
+                            nb.setForeground(TEXT_SOFT);
+                        } else {
+                            nb.setText(String.valueOf(c));
+                            applyNumberColor(nb, c);
+                        }
+
                         nb.setEnabled(false);
-                        applyNumberColor(nb, c);
-                        nb.setBackground(OPEN_CELL_BG);
-                        nb.setBorder(BorderFactory.createLoweredBevelBorder());
-                        if (c == 0) abrirCeldasVacias(ni, nj);
+                        styleCellOpen(nb);
+
+                        openedCells++;
+                        checkWin();
+
+                        presupuesto[0]--;
+                        if (presupuesto[0] <= 0) return;
+
+                        if (c == 0) {
+                            abrirCeldasVaciasLimitado(ni, nj, presupuesto);
+                        }
                     }
                 }
             }
         }
     }
 
-    // Método para colocar minas aleatoriamente
+    // ===== Colocar minas (misma lógica tuya para favorecer 2/3) =====
     private void colocarMinas() {
-        // limpiar
-        for (int i = 0; i < SIZE; i++) for (int j = 0; j < SIZE; j++) minas[i][j] = false;
-        int minasColocadas = 0;
-        while (minasColocadas < NUM_MINAS) {
-            int fila = (int) (Math.random() * SIZE);
-            int col = (int) (Math.random() * SIZE);
-            if (!minas[fila][col]) {
-                minas[fila][col] = true;
-                minasColocadas++;
+        int intentos = 1500 + (SIZE * SIZE);
+        boolean[][] mejor = null;
+        int mejorScore = Integer.MIN_VALUE;
+
+        for (int t = 0; t < intentos; t++) {
+            boolean[][] cand = generarMinasRandom();
+            int score = puntuarTablero(cand);
+
+            if (score > mejorScore) {
+                mejorScore = score;
+                mejor = cand;
+            }
+        }
+
+        for (int i = 0; i < SIZE; i++) {
+            for (int j = 0; j < SIZE; j++) {
+                minas[i][j] = (mejor != null && mejor[i][j]);
             }
         }
     }
 
-    // Contar minas adyacentes
+    private boolean[][] generarMinasRandom() {
+        boolean[][] cand = new boolean[SIZE][SIZE];
+        int colocadas = 0;
+
+        while (colocadas < NUM_MINAS) {
+            int r = rnd.nextInt(SIZE);
+            int c = rnd.nextInt(SIZE);
+            if (!cand[r][c]) {
+                cand[r][c] = true;
+                colocadas++;
+            }
+        }
+        return cand;
+    }
+
+    private int puntuarTablero(boolean[][] cand) {
+        int score = 0;
+
+        for (int i = 0; i < SIZE; i++) {
+            for (int j = 0; j < SIZE; j++) {
+                if (cand[i][j]) continue;
+
+                int adj = contarAdjCon(cand, i, j);
+
+                if (adj == 2 || adj == 3) score += 6;
+                else if (adj == 4) score += 2;
+                else if (adj == 5) score += 1;
+                else if (adj == 1) score -= 5;
+                else if (adj == 0) score -= 3;
+            }
+        }
+
+        return score;
+    }
+
+    private int contarAdjCon(boolean[][] cand, int i, int j) {
+        int cnt = 0;
+        for (int di = -1; di <= 1; di++) {
+            for (int dj = -1; dj <= 1; dj++) {
+                int ni = i + di, nj = j + dj;
+                if (ni >= 0 && nj >= 0 && ni < SIZE && nj < SIZE) {
+                    if (cand[ni][nj]) cnt++;
+                }
+            }
+        }
+        return cnt;
+    }
+
     private int contarMinasAdjacentes(int i, int j) {
         int c = 0;
         for (int di = -1; di <= 1; di++) {
@@ -245,15 +461,14 @@ public class BuscaminasGUI extends JFrame {
     private void resetGame() {
         colocarMinas();
         openedCells = 0;
+        gameOver = false;
+
         for (int i = 0; i < SIZE; i++) {
             for (int j = 0; j < SIZE; j++) {
                 JButton b = botones[i][j];
                 b.setText("");
                 b.setEnabled(true);
-                // Restablecer a la apariencia configurada por `CELL_BG`
-                b.setBackground(CELL_BG);
-                b.setBorder(BorderFactory.createRaisedBevelBorder());
-                b.setForeground(Color.BLACK);
+                styleCellClosed(b);
             }
         }
     }
